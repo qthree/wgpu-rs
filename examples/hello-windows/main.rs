@@ -5,40 +5,28 @@ use winit::{
     window::{Window, WindowId},
 };
 
-struct ViewportDesc<S = ()> {
+struct ViewportDesc {
     window: Window,
     background: wgpu::Color,
-    surface: S,
+    surface: wgpu::Surface,
 }
 
 struct Viewport {
-    desc: ViewportDesc<wgpu::Surface>,
+    desc: ViewportDesc,
     sc_desc: wgpu::SwapChainDescriptor,
     swap_chain: wgpu::SwapChain,
 }
 
 impl ViewportDesc {
-    fn new(window: Window, background: wgpu::Color) -> Self {
+    fn new(window: Window, background: wgpu::Color, instance: &wgpu::Instance) -> Self {
+        let surface = unsafe { instance.create_surface(&window) };
         Self {
             window,
             background,
-            surface: (),
-        }
-    }
-    fn create_surface(self, instance: &wgpu::Instance) -> ViewportDesc<wgpu::Surface> {
-        let Self {
-            window, background, ..
-        } = self;
-        let surface = unsafe { instance.create_surface(&window) };
-        ViewportDesc {
-            window,
             surface,
-            background,
         }
     }
-}
 
-impl ViewportDesc<wgpu::Surface> {
     fn build(self, device: &wgpu::Device, swapchain_format: wgpu::TextureFormat) -> Viewport {
         let size = self.window.inner_size();
 
@@ -76,13 +64,13 @@ impl Viewport {
 
 async fn run(
     event_loop: EventLoop<()>,
-    viewports: Vec<ViewportDesc>,
+    viewports: Vec<(Window, wgpu::Color)>,
     swapchain_format: wgpu::TextureFormat,
 ) {
     let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
     let viewports: Vec<_> = viewports
         .into_iter()
-        .map(|desc| desc.create_surface(&instance))
+        .map(|(window, color)| ViewportDesc::new(window, color, &instance))
         .collect();
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
@@ -192,7 +180,7 @@ fn main() {
                 fn frac(index: u32, max: u32) -> f64 {
                     index as f64 / max as f64
                 }
-                viewports.push(ViewportDesc::new(
+                viewports.push((
                     window,
                     wgpu::Color {
                         r: frac(row, ROWS),
