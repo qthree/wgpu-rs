@@ -1307,6 +1307,12 @@ impl crate::Context for Context {
     fn render_pipeline_drop(&self, _pipeline: &Self::RenderPipelineId) {
         // Dropped automatically
     }
+    fn surface_drop(&self, surface: &Self::SurfaceId) {
+        // Dropped automatically
+    }
+    fn swap_chain_drop(&self, swap_chain: &Self::SwapChainId) {
+        // Dropped automatically
+    }
 
     fn compute_pipeline_get_bind_group_layout(
         &self,

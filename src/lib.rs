@@ -316,6 +316,8 @@ trait Context: Debug + Send + Sized + Sync {
     fn render_bundle_drop(&self, render_bundle: &Self::RenderBundleId);
     fn compute_pipeline_drop(&self, pipeline: &Self::ComputePipelineId);
     fn render_pipeline_drop(&self, pipeline: &Self::RenderPipelineId);
+    fn surface_drop(&self, surface: &Self::SurfaceId);
+    fn swap_chain_drop(&self, swap_chain: &Self::SwapChainId);
 
     fn compute_pipeline_get_bind_group_layout(
         &self,
@@ -586,7 +588,16 @@ impl Drop for Sampler {
 /// be presented. A `Surface` may be created with the unsafe function [`Instance::create_surface`].
 #[derive(Debug)]
 pub struct Surface {
+    context: Arc<C>,
     id: <C as Context>::SurfaceId,
+}
+
+impl Drop for Surface {
+    fn drop(&mut self) {
+        if !thread::panicking() {
+            self.context.surface_drop(&self.id);
+        }
+    }
 }
 
 /// Handle to a swap chain.
@@ -595,8 +606,16 @@ pub struct Surface {
 /// A `SwapChain` may be created with [`Device::create_swap_chain`].
 #[derive(Debug)]
 pub struct SwapChain {
-    context: Arc<C>,
     id: <C as Context>::SwapChainId,
+    surface: Option<Surface>,
+}
+
+impl Drop for SwapChain {
+    fn drop(&mut self) {
+        if !thread::panicking() {
+            self.context().swap_chain_drop(&self.id);
+        }
+    }
 }
 
 /// Handle to a binding group layout.
@@ -1330,11 +1349,13 @@ impl Instance {
     /// # Safety
     ///
     /// - Raw Window Handle must be a valid object to create a surface upon.
+    /// - It's unspecified behavior to create second surface for the same window. Use [`SwapChain::into_surface`] to reclaim surface.
     pub unsafe fn create_surface<W: raw_window_handle::HasRawWindowHandle>(
         &self,
         window: &W,
     ) -> Surface {
         Surface {
+            context: Arc::clone(&self.context),
             id: Context::instance_create_surface(&*self.context, window),
         }
     }
@@ -1548,10 +1569,10 @@ impl Device {
     ///
     /// - A old [`SwapChainFrame`] is still alive referencing an old swapchain.
     /// - Texture format requested is unsupported on the swap chain.
-    pub fn create_swap_chain(&self, surface: &Surface, desc: &SwapChainDescriptor) -> SwapChain {
+    pub fn create_swap_chain(&self, surface: Surface, desc: &SwapChainDescriptor) -> SwapChain {
         SwapChain {
-            context: Arc::clone(&self.context),
             id: Context::device_create_swap_chain(&*self.context, &self.id, &surface.id, desc),
+            surface: Some(surface),
         }
     }
 
@@ -2606,30 +2627,26 @@ impl Queue {
                 .map(|mut comb| comb.id.take().unwrap()),
         );
     }
-}
 
-impl Drop for SwapChainTexture {
-    fn drop(&mut self) {
-        if !thread::panicking() {
-            Context::swap_chain_present(&*self.view.context, &self.view.id, &self.detail);
-        }
+    /// Presents the swap chain image.
+    pub fn present(&self, frame: SwapChainFrame) {
+        let texture = frame.output;
+        Context::swap_chain_present(&*texture.view.context, &texture.view.id, &texture.detail);
     }
 }
 
 impl SwapChain {
     /// Returns the next texture to be presented by the swapchain for drawing.
     ///
-    /// When the [`SwapChainFrame`] returned by this method is dropped, the swapchain will present
-    /// the texture to the associated [`Surface`].
+    /// To present [`SwapChainFrame`] returned by this method use [`Queue::present`]
     ///
-    /// If a SwapChainFrame referencing this surface is alive when the swapchain is recreated,
-    /// recreating the swapchain will panic.
+    /// Returned SwapChainFrame should be droped or presented before the drop of this swap chain.
     pub fn get_current_frame(&self) -> Result<SwapChainFrame, SwapChainError> {
         let (view_id, status, detail) =
-            Context::swap_chain_get_current_texture_view(&*self.context, &self.id);
+            Context::swap_chain_get_current_texture_view(self.context().as_ref(), &self.id);
         let output = view_id.map(|id| SwapChainTexture {
             view: TextureView {
-                context: Arc::clone(&self.context),
+                context: Arc::clone(self.context()),
                 id: id,
                 owned: false,
             },
@@ -2649,6 +2666,26 @@ impl SwapChain {
             SwapChainStatus::Outdated => Err(SwapChainError::Outdated),
             SwapChainStatus::Lost => Err(SwapChainError::Lost),
         }
+    }
+
+    /// Returns underlying `Surface`
+    ///
+    /// # Panics
+    ///
+    /// - [`SwapChainFrame`] returned by [`SwapChain::get_current_frame`] is still alive.
+    pub fn into_surface(mut self) -> Surface {
+        let surface = self.surface.take().expect("Unreachable");
+        surface.context.swap_chain_drop(&self.id);
+        std::mem::forget(self);
+        surface
+    }
+
+    // Helper method to get context from underlying surface.
+    // Can't fail because surface is None only inside `SwapChain::into_surface`.
+    // Surface is stored inside Option because SwapChain has Drop implemented, preventing deconstruction.
+    // Alternative is unsafe std::ptr::read or std::mem::ManuallyDrop
+    fn context(&self) -> &Arc<C> {
+        &self.surface.as_ref().expect("Unreachable").context
     }
 }
 

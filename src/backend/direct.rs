@@ -1262,6 +1262,14 @@ impl crate::Context for Context {
         let global = &self.0;
         wgc::gfx_select!(*pipeline => global.render_pipeline_drop(*pipeline))
     }
+    fn surface_drop(&self, surface_id: &Self::SurfaceId) {
+        let global = &self.0;
+        global.surface_drop(*surface_id);
+    }
+    fn swap_chain_drop(&self, swap_chain: &Self::SwapChainId) {
+        let global = &self.0;
+        wgc::gfx_select!(*swap_chain => global.swap_chain_drop(*swap_chain))
+    }    
 
     fn compute_pipeline_get_bind_group_layout(
         &self,
