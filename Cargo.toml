@@ -27,7 +27,9 @@ package = "wgpu-core"
 #version = "0.6"
 #git = "https://github.com/gfx-rs/wgpu"
 #rev = "7ac706f0a9d90ebdcffeae48e3c530b9921bff2c"
-path = "../wgpu/wgpu-core"
+#path = "../wgpu/wgpu-core"
+git = "https://github.com/qthree/wgpu.git"
+branch = "old_swapchain_drop"
 features = ["raw-window-handle"]
 
 [dependencies.wgt]
@@ -35,7 +37,9 @@ package = "wgpu-types"
 #version = "0.6"
 #git = "https://github.com/gfx-rs/wgpu"
 #rev = "7ac706f0a9d90ebdcffeae48e3c530b9921bff2c"
-path = "../wgpu/wgpu-types"
+#path = "../wgpu/wgpu-types"
+git = "https://github.com/qthree/wgpu.git"
+branch = "old_swapchain_drop"
 
 [dependencies]
 arrayvec = "0.5"
